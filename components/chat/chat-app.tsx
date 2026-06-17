@@ -33,7 +33,7 @@ import {
   type OnboardingPhase,
 } from "@/lib/chrysty/onboarding";
 import { useUIStore, type OutfitLookUI } from "@/store/ui";
-import { pollOutfitGeneration, triggerOutfitRender } from "@/lib/hooks/use-outfit-render-poll";
+import { pollOutfitGeneration, renderPollTimeoutMs } from "@/lib/hooks/use-outfit-render-poll";
 import { runGenerationPhaseTimers } from "@/lib/hooks/generation-phase-timers";
 
 type Workspace = {
@@ -158,10 +158,10 @@ export function ChatApp({ workspace }: { workspace: Workspace }) {
         setGenerating(true, UI_COPY.generation.phases.rendering);
         setActiveGenerationId(data.generationId);
 
-        void triggerOutfitRender(data.generationId);
-
         stopPoll = pollOutfitGeneration({
           generationId: data.generationId,
+          totalCount: looks.length,
+          timeoutMs: renderPollTimeoutMs(looks.length),
           onUpdate: (pollData) => {
             setGenerationLooks(pollData.looks);
             setMessages((prev) =>

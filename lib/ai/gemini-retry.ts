@@ -7,6 +7,13 @@ const DEFAULT_FALLBACK_MODELS = [
   "gemini-pro-latest",
 ];
 
+export type GenerateContentRetryOptions = {
+  maxAttemptsPerModel?: number;
+  baseDelayMs?: number;
+  deadlineMs?: number;
+  maxModels?: number;
+};
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -50,18 +57,39 @@ export function getGeminiModelCandidates(primaryModel: string): string[] {
   return [...new Set([primaryModel, ...fromEnv, ...DEFAULT_FALLBACK_MODELS])];
 }
 
+function resolveModelList(primaryModel: string, maxModels?: number): string[] {
+  const models = getGeminiModelCandidates(primaryModel);
+  if (maxModels === undefined) return models;
+  return models.slice(0, Math.max(1, maxModels));
+}
+
 export async function generateContentWithRetry<T>(
   call: (model: string) => Promise<T>,
   primaryModel: string,
-  options?: { maxAttemptsPerModel?: number; baseDelayMs?: number }
+  options?: GenerateContentRetryOptions
 ): Promise<T> {
-  const models = getGeminiModelCandidates(primaryModel);
+  const models = resolveModelList(primaryModel, options?.maxModels);
   const maxAttempts = options?.maxAttemptsPerModel ?? 2;
   const baseDelay = options?.baseDelayMs ?? 1500;
+  const deadlineAt =
+    options?.deadlineMs !== undefined ? Date.now() + options.deadlineMs : null;
   let lastError: unknown;
 
   for (const model of models) {
+    if (deadlineAt !== null && Date.now() >= deadlineAt) {
+      generateLog("gemini_retry_budget_exhausted", {
+        primaryModel,
+        modelsTried: models.indexOf(model),
+      });
+      break;
+    }
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (deadlineAt !== null && Date.now() >= deadlineAt) {
+        generateLog("gemini_retry_budget_exhausted", { model, attempt });
+        break;
+      }
+
       try {
         return await call(model);
       } catch (error) {
@@ -73,6 +101,11 @@ export async function generateContentWithRetry<T>(
         if (isLastModel && isLastAttempt) break;
 
         const delay = baseDelay * 2 ** attempt;
+        if (deadlineAt !== null && Date.now() + delay >= deadlineAt) {
+          generateLog("gemini_retry_budget_exhausted", { model, attempt, delayMs: delay });
+          break;
+        }
+
         generateLog("gemini_retry", { model, attempt: attempt + 1, delayMs: delay });
         await sleep(delay);
       }

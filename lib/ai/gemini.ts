@@ -15,7 +15,7 @@ import { generateContentWithRetry } from "@/lib/ai/gemini-retry";
 
 
 
-const GEMINI_TIMEOUT_MS = 120_000;
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_OUTFIT_PLAN_TIMEOUT_MS ?? 90_000);
 
 
 
@@ -304,7 +304,12 @@ export async function planOutfitsWithGemini(params: {
           },
         },
       }),
-    model
+    model,
+    {
+      maxAttemptsPerModel: 1,
+      maxModels: 3,
+      deadlineMs: 240_000,
+    }
   );
 
 

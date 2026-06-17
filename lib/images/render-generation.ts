@@ -7,13 +7,33 @@ import type { OutfitLookPlan, OutfitPlan } from "@/lib/ai/outfit-plan-schema";
 import { generateLog } from "@/lib/chrysty/generate-debug";
 import { isFalConfigured } from "@/lib/config/fal";
 
+export type RenderGenerationResult = {
+  status: "rendering" | "complete" | "failed";
+  renderedCount: number;
+  totalCount: number;
+  hasMore: boolean;
+  renderedThisCall: boolean;
+};
+
 export async function renderGenerationLooks(params: {
   generationId: string;
   workspaceId: string;
-}): Promise<void> {
+}): Promise<RenderGenerationResult> {
+  const emptyResult = (
+    status: RenderGenerationResult["status"],
+    renderedCount = 0,
+    totalCount = 0
+  ): RenderGenerationResult => ({
+    status,
+    renderedCount,
+    totalCount,
+    hasMore: false,
+    renderedThisCall: false,
+  });
+
   if (!isFalConfigured()) {
     generateLog("render_generation_skipped", { reason: "fal_not_configured" });
-    return;
+    return emptyResult("failed");
   }
 
   const supabase = createAdminClient();
@@ -28,7 +48,7 @@ export async function renderGenerationLooks(params: {
 
   if (genError || !generation) {
     generateLog("render_generation_failed", { reason: "generation_not_found", generationId });
-    return;
+    return emptyResult("failed");
   }
 
   const bodyRefs = await listBodyReferences(workspaceId);
@@ -38,7 +58,7 @@ export async function renderGenerationLooks(params: {
       .update({ status: "failed" })
       .eq("id", generationId);
     generateLog("render_generation_failed", { reason: "no_body_refs", generationId });
-    return;
+    return emptyResult("failed");
   }
 
   const promptContext = generation.prompt_context as {
@@ -52,7 +72,7 @@ export async function renderGenerationLooks(params: {
 
   const { data: lookRows, error: looksError } = await supabase
     .from(STYLIST_TABLES.outfitLooks)
-    .select("id, wardrobe_item_ids, created_at")
+    .select("id, wardrobe_item_ids, image_id, created_at")
     .eq("generation_id", generationId)
     .order("created_at", { ascending: true });
 
@@ -61,7 +81,24 @@ export async function renderGenerationLooks(params: {
       .from(STYLIST_TABLES.outfitGenerations)
       .update({ status: "failed" })
       .eq("id", generationId);
-    return;
+    return emptyResult("failed");
+  }
+
+  const totalCount = lookRows.length;
+  const alreadyRendered = lookRows.filter((row) => row.image_id).length;
+
+  if (alreadyRendered >= totalCount) {
+    await supabase
+      .from(STYLIST_TABLES.outfitGenerations)
+      .update({ status: "complete" })
+      .eq("id", generationId);
+    return {
+      status: "complete",
+      renderedCount: alreadyRendered,
+      totalCount,
+      hasMore: false,
+      renderedThisCall: false,
+    };
   }
 
   const wardrobeId = generation.wardrobe_id ?? (await getDefaultWardrobeId(workspaceId));
@@ -72,48 +109,97 @@ export async function renderGenerationLooks(params: {
     .update({ status: "rendering" })
     .eq("id", generationId);
 
-  generateLog("render_generation_start", {
-    generationId,
-    lookCount: lookRows.length,
-    bodyRefCount: bodyRefs.length,
-  });
-
-  let successCount = 0;
-
-  for (let i = 0; i < lookRows.length; i++) {
-    const lookRow = lookRows[i]!;
-    const planLook: OutfitLookPlan | undefined = plan?.looks?.[i];
-
-    if (!planLook) {
-      generateLog("render_look_skipped", { lookId: lookRow.id, reason: "no_plan_look" });
-      continue;
-    }
-
-    generateLog("render_look_start", { lookId: lookRow.id, index: i + 1, total: lookRows.length });
-
-    const result = await renderAndStoreLookSafe({
-      workspaceId,
-      generationId,
-      lookId: lookRow.id,
-      planLook,
-      stylingMessage,
-      bodyRefs,
-      wardrobeRows,
-    });
-
-    if (result) successCount += 1;
+  const nextIndex = lookRows.findIndex((row) => !row.image_id);
+  if (nextIndex < 0) {
+    return {
+      status: "complete",
+      renderedCount: alreadyRendered,
+      totalCount,
+      hasMore: false,
+      renderedThisCall: false,
+    };
   }
 
-  const finalStatus = successCount > 0 ? "complete" : "failed";
-  await supabase
-    .from(STYLIST_TABLES.outfitGenerations)
-    .update({ status: finalStatus })
-    .eq("id", generationId);
+  const lookRow = lookRows[nextIndex]!;
+  const planLook: OutfitLookPlan | undefined = plan?.looks?.[nextIndex];
+
+  generateLog("render_generation_start", {
+    generationId,
+    lookCount: totalCount,
+    bodyRefCount: bodyRefs.length,
+    nextLookIndex: nextIndex + 1,
+    alreadyRendered,
+  });
+
+  if (!planLook) {
+    generateLog("render_look_skipped", { lookId: lookRow.id, reason: "no_plan_look" });
+    const renderedCount = lookRows.filter((row) => row.image_id).length;
+    const status = renderedCount > 0 ? "rendering" : "failed";
+    await supabase
+      .from(STYLIST_TABLES.outfitGenerations)
+      .update({ status: renderedCount >= totalCount ? "complete" : status })
+      .eq("id", generationId);
+    return {
+      status: renderedCount >= totalCount ? "complete" : status,
+      renderedCount,
+      totalCount,
+      hasMore: renderedCount < totalCount,
+      renderedThisCall: false,
+    };
+  }
+
+  generateLog("render_look_start", {
+    lookId: lookRow.id,
+    index: nextIndex + 1,
+    total: totalCount,
+  });
+
+  const result = await renderAndStoreLookSafe({
+    workspaceId,
+    generationId,
+    lookId: lookRow.id,
+    planLook,
+    stylingMessage,
+    bodyRefs,
+    wardrobeRows,
+  });
+
+  const { data: looksAfter } = await supabase
+    .from(STYLIST_TABLES.outfitLooks)
+    .select("id, image_id")
+    .eq("generation_id", generationId);
+
+  const renderedCount = looksAfter?.filter((row) => row.image_id).length ?? 0;
+  const hasMore = renderedCount < totalCount;
+  const status: RenderGenerationResult["status"] =
+    renderedCount >= totalCount ? "complete" : renderedCount > 0 || hasMore ? "rendering" : "failed";
+
+  if (renderedCount === 0 && !hasMore) {
+    await supabase
+      .from(STYLIST_TABLES.outfitGenerations)
+      .update({ status: "failed" })
+      .eq("id", generationId);
+  } else {
+    await supabase
+      .from(STYLIST_TABLES.outfitGenerations)
+      .update({ status: renderedCount >= totalCount ? "complete" : "rendering" })
+      .eq("id", generationId);
+  }
 
   generateLog("render_generation_done", {
     generationId,
-    successCount,
-    total: lookRows.length,
-    status: finalStatus,
+    renderedThisCall: Boolean(result),
+    renderedCount,
+    total: totalCount,
+    status,
+    hasMore,
   });
+
+  return {
+    status: renderedCount >= totalCount ? "complete" : status,
+    renderedCount,
+    totalCount,
+    hasMore,
+    renderedThisCall: Boolean(result),
+  };
 }

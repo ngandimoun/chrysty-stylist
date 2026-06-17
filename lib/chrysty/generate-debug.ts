@@ -35,12 +35,13 @@ export function normalizeGenerationError(error: unknown): {
   if (error instanceof Error) {
     const isTimeout =
       error.name === "AbortError" ||
-      /aborted|timeout/i.test(error.message);
+      /aborted|timeout|FUNCTION_INVOCATION_TIMEOUT|runtime timeout/i.test(error.message);
+    const isRuntime504 = /504|FUNCTION_INVOCATION_TIMEOUT/i.test(error.message);
     const isModelBusy =
       /high demand|UNAVAILABLE|503|overloaded|resource exhausted/i.test(error.message);
     return {
-      message: isTimeout
-        ? "Styling took too long — please try again."
+      message: isTimeout || isRuntime504
+        ? "Styling is taking longer than expected — please try again."
         : isModelBusy
           ? "The styling model is busy right now — please try again in a minute."
           : error.message,

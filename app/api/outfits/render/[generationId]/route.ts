@@ -56,7 +56,7 @@ export async function POST(
 
     generateLog("render_trigger", { generationId, source: "client", renderedCount, totalCount });
 
-    await renderGenerationLooks({
+    const renderResult = await renderGenerationLooks({
       generationId,
       workspaceId: workspace.id,
     });
@@ -66,21 +66,17 @@ export async function POST(
       .select("id, image_id")
       .eq("generation_id", generationId);
 
-    const { data: generationAfter } = await supabase
-      .from(STYLIST_TABLES.outfitGenerations)
-      .select("status")
-      .eq("id", generationId)
-      .single();
-
     const finalRenderedCount = looksAfter?.filter((look) => look.image_id).length ?? 0;
     const finalTotalCount = looksAfter?.length ?? 0;
-    const status = generationAfter?.status ?? "failed";
+    const status = renderResult.status;
 
     return NextResponse.json({
       ok: status !== "failed",
       status,
       renderedCount: finalRenderedCount,
       totalCount: finalTotalCount,
+      hasMore: renderResult.hasMore,
+      renderedThisCall: renderResult.renderedThisCall,
     });
   } catch (e) {
     return NextResponse.json(

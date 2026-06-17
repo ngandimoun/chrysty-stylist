@@ -12,6 +12,15 @@ export type OutfitPollCompleteMeta = {
   timedOut: boolean;
 };
 
+const RENDER_POLL_MS_PER_LOOK = 180_000;
+const RENDER_POLL_MIN_MS = 320_000;
+const RENDER_CHAIN_STALE_MS = 45_000;
+
+export function renderPollTimeoutMs(totalCount: number): number {
+  const count = Math.max(1, totalCount);
+  return Math.max(RENDER_POLL_MIN_MS, count * RENDER_POLL_MS_PER_LOOK);
+}
+
 export async function triggerOutfitRender(generationId: string) {
   try {
     await fetch(`/api/outfits/render/${encodeURIComponent(generationId)}`, {
@@ -66,16 +75,41 @@ function isPollComplete(
   return { done: false, timedOut: false };
 }
 
+function shouldChainRender(
+  data: OutfitPollResponse,
+  chainState: { lastTriggeredForCount: number; lastTriggerAt: number }
+): boolean {
+  if (data.totalCount <= 0 || data.renderedCount >= data.totalCount) return false;
+  if (data.generationStatus !== "rendering" && data.generationStatus !== "pending") {
+    return false;
+  }
+
+  const progressMade = data.renderedCount > chainState.lastTriggeredForCount;
+  const initialTrigger = chainState.lastTriggeredForCount < 0;
+  const retryStale = Date.now() - chainState.lastTriggerAt >= RENDER_CHAIN_STALE_MS;
+
+  return progressMade || initialTrigger || retryStale;
+}
+
 export function pollOutfitGeneration(params: {
   generationId: string;
   onUpdate: (data: OutfitPollResponse) => void;
   onComplete: (data: OutfitPollResponse, meta: OutfitPollCompleteMeta) => void;
   intervalMs?: number;
   timeoutMs?: number;
+  totalCount?: number;
 }): () => void {
-  const { generationId, onUpdate, onComplete, intervalMs = 2000, timeoutMs = 320_000 } = params;
+  const {
+    generationId,
+    onUpdate,
+    onComplete,
+    intervalMs = 2000,
+    totalCount: initialTotalCount = 1,
+    timeoutMs = renderPollTimeoutMs(initialTotalCount),
+  } = params;
   const startedAt = Date.now();
   let stopped = false;
+  const chainState = { lastTriggeredForCount: -1, lastTriggerAt: 0 };
 
   const tick = async () => {
     if (stopped) return;
@@ -84,7 +118,16 @@ export function pollOutfitGeneration(params: {
 
     onUpdate(data);
 
-    const { done, timedOut } = isPollComplete(data, startedAt, timeoutMs);
+    if (shouldChainRender(data, chainState)) {
+      chainState.lastTriggeredForCount = data.renderedCount;
+      chainState.lastTriggerAt = Date.now();
+      void triggerOutfitRender(generationId);
+    }
+
+    const effectiveTimeout = renderPollTimeoutMs(
+      Math.max(data.totalCount, initialTotalCount, 1)
+    );
+    const { done, timedOut } = isPollComplete(data, startedAt, effectiveTimeout);
 
     if (done) {
       stopped = true;

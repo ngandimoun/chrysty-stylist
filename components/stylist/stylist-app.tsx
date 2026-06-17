@@ -13,7 +13,7 @@ import { StylistSidebar } from "@/components/stylist/sidebar";
 import type { UploadAsset } from "@/components/stylist/upload-types";
 import { UI_COPY } from "@/lib/chrysty/ui-copy";
 import { DEFAULT_LOOK_COUNT } from "@/lib/chrysty/look-count-constants";
-import { readJsonResponse } from "@/lib/http/read-json-response";
+import { readJsonResponse, httpErrorMessage } from "@/lib/http/read-json-response";
 import {
   useUIStore,
   type OutfitGenerationUI,
@@ -23,7 +23,7 @@ import { GeneratingLooks } from "@/components/stylist/generating-looks";
 import {
   isRenderPollFailed,
   pollOutfitGeneration,
-  triggerOutfitRender,
+  renderPollTimeoutMs,
   type OutfitPollCompleteMeta,
   type OutfitPollResponse,
 } from "@/lib/hooks/use-outfit-render-poll";
@@ -166,18 +166,17 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
   );
 
   const beginRenderingPoll = useCallback(
-    (generationId: string, userPrompt?: string) => {
+    (generationId: string, userPrompt?: string, totalCount = 1) => {
       resumePollRef.current?.();
       if (userPrompt) setActivePrompt(userPrompt);
       setActiveGenerationId(generationId);
       setGenerationPhase("rendering");
       setGenerating(true, UI_COPY.generation.phases.rendering);
 
-      void triggerOutfitRender(generationId);
-
       resumePollRef.current = pollOutfitGeneration({
         generationId,
-        timeoutMs: 320_000,
+        totalCount,
+        timeoutMs: renderPollTimeoutMs(totalCount),
         onUpdate: (pollData) => {
           setGenerations((prev) =>
             updateGeneration(prev, generationId, {
@@ -216,7 +215,7 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
 
       const stuck = nextGenerations.find((g) => g.generationStatus === "rendering");
       if (stuck) {
-        beginRenderingPoll(stuck.generationId, stuck.userPrompt);
+        beginRenderingPoll(stuck.generationId, stuck.userPrompt, stuck.looks.length);
       }
     })();
 
@@ -270,7 +269,11 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
         generationStatus?: string | null;
       }>(res);
 
-      if (!res.ok) throw new Error(data.error ?? "Generation failed");
+      if (!res.ok) {
+        throw new Error(
+          (data as { error?: string }).error ?? httpErrorMessage(res.status)
+        );
+      }
 
       const nextLooks = (data.looks ?? []) as OutfitLookUI[];
       const generationId = data.generationId;
@@ -291,7 +294,7 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
 
       if (data.rendering && generationId) {
         clearPhaseTimers();
-        beginRenderingPoll(generationId, trimmed);
+        beginRenderingPoll(generationId, trimmed, nextLooks.length);
         return;
       }
     } catch (e) {
