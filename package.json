@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "postinstall": "npm --prefix packages/platform run build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "@chrysty/platform": "github:ngandimoun/chrystydev2#master&path:packages/platform",
+    "@chrysty/platform": "file:packages/platform",
     "@fal-ai/client": "^1.10.1",
     "@google/genai": "^2.8.0",
     "@mastra/core": "^1.42.0",
