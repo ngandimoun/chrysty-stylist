@@ -4,6 +4,7 @@ import { StylistApp } from "@/components/stylist/stylist-app";
 import { SetupRequired } from "@/components/setup/setup-required";
 import { getWorkspaceFromCookie } from "@/lib/workspace/session";
 import { parseWorkspaceSettings } from "@/lib/workspace/settings";
+import { ensureUserWorkspaceCookie } from "@/lib/workspace/user-sync";
 import { isSupabaseConfigured } from "@/lib/supabase/admin";
 
 export default async function HomePage() {
@@ -11,7 +12,11 @@ export default async function HomePage() {
     return <SetupRequired />;
   }
 
-  const workspace = await getWorkspaceFromCookie();
+  let workspace = await getWorkspaceFromCookie();
+  if (!workspace) {
+    await ensureUserWorkspaceCookie();
+    workspace = await getWorkspaceFromCookie();
+  }
   if (!workspace) {
     redirect("/welcome");
   }

@@ -12,8 +12,10 @@ import {
   ensureRegistrySeeded,
 } from "@/lib/workspace/registry";
 import { mergeWorkspaceSettings } from "@/lib/workspace/settings";
-import { buildProfileSummary } from "@/lib/chrysty/workspace-profile";
+import { getServerUserId } from "@/lib/supabase/server";
 import { toWorkspaceSummary } from "@/lib/workspace/serialize";
+import { listUserWorkspaceRows } from "@/lib/workspace/user-sync";
+import type { Json } from "@/types/database";
 
 const profileSchema = z.object({
   dressingFor: z.string().min(1),
@@ -35,26 +37,53 @@ export async function GET() {
   const cookieStore = await cookies();
   const activeToken = cookieStore.get(WORKSPACE_COOKIE)?.value;
   const tokens = await ensureRegistrySeeded(activeToken);
-
-  if (tokens.length === 0) {
-    return NextResponse.json({ workspaces: [] });
-  }
+  const userId = await getServerUserId();
 
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from(STYLIST_TABLES.workspaces)
-    .select("id, name, visitor_token, onboarding_complete, settings, created_at")
-    .in("visitor_token", tokens)
-    .order("created_at", { ascending: true });
+  const merged = new Map<
+    string,
+    {
+      id: string;
+      name: string;
+      visitor_token: string;
+      onboarding_complete: boolean;
+      settings: Json;
+      created_at: string;
+    }
+  >();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (tokens.length > 0) {
+    const { data, error } = await supabase
+      .from(STYLIST_TABLES.workspaces)
+      .select("id, name, visitor_token, onboarding_complete, settings, created_at")
+      .in("visitor_token", tokens);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    for (const row of data ?? []) {
+      merged.set(row.id, row);
+    }
   }
 
-  const byToken = new Map((data ?? []).map((row) => [row.visitor_token, row]));
-  const workspaces = tokens
-    .map((token) => byToken.get(token))
-    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+  if (userId) {
+    try {
+      const userRows = await listUserWorkspaceRows(userId);
+      for (const row of userRows) {
+        merged.set(row.id, row);
+        await addTokenToRegistry(row.visitor_token);
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load user workspaces";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  const workspaces = [...merged.values()]
+    .sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
     .map((row) => toWorkspaceSummary(row, activeToken));
 
   return NextResponse.json({ workspaces });
