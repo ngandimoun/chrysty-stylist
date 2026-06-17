@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { AuthGuard } from "@/components/auth/auth-guard";
 import { WelcomePage } from "@/components/welcome/welcome-page";
 import { SetupRequired } from "@/components/setup/setup-required";
 import { getWorkspaceFromCookie } from "@/lib/workspace/session";
@@ -12,5 +13,9 @@ export default async function WelcomeRoute() {
   const workspace = await getWorkspaceFromCookie();
   if (workspace) redirect("/");
 
-  return <WelcomePage />;
+  return (
+    <AuthGuard>
+      <WelcomePage />
+    </AuthGuard>
+  );
 }

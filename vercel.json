@@ -1,0 +1,15 @@
+{
+  "functions": {
+    "app/api/chat/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/outfits/generate/route.ts": {
+      "maxDuration": 120
+    }
+  },
+  "build": {
+    "env": {
+      "NODE_VERSION": "20"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 export const maxDuration = 120;
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -15,6 +15,11 @@ import { listBodyReferences, summarizeBodyReferences } from "@/lib/body/service"
 import { getMemoryJson } from "@/lib/memory/service";
 import { appendMessage, getOrCreateConversation } from "@/lib/chat/service";
 import { detectChatIntent, OUTFIT_RESPONSE_TEMPLATE } from "@/lib/chrysty/chat-intents";
+import {
+  PlatformAccessError,
+  requirePlatformAccess,
+} from "@/lib/chrysty/guard";
+import { trackAgentUsage } from "@/lib/chrysty/track-usage";
 import {
   getDefaultWardrobeId,
   getItemImagePath,
@@ -44,9 +49,11 @@ function wardrobeStoragePath(
   return getItemImagePath(item);
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   try {
+    await requirePlatformAccess(request);
+
     if (!isSupabaseConfigured()) {
       generateLog("blocked", { reason: "supabase_not_configured" });
       return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
@@ -144,6 +151,16 @@ export async function POST(request: Request) {
       workspaceStylingContext,
       bodyReferenceSummary,
     });
+    try {
+      await trackAgentUsage({
+        inputTokens: Math.ceil(stylingMessage.length / 4),
+        outputTokens: Math.ceil(
+          (plan.assistantMessage.length + plan.planningReasoning.length) / 4
+        ),
+      });
+    } catch (error) {
+      console.error("[usage/track] Failed to record usage:", error);
+    }
     const looksToSave = plan.looks.slice(0, lookCount);
     generateLog("planning_done", {
       plannedLooks: plan.looks.length,
@@ -298,6 +315,9 @@ export async function POST(request: Request) {
       heroLabel: OUTFIT_RESPONSE_TEMPLATE.heroLabel,
     });
   } catch (e) {
+    if (e instanceof PlatformAccessError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
     generateError("failed", e);
     const { message } = normalizeGenerationError(e);
     return NextResponse.json({ error: message }, { status: 500 });
