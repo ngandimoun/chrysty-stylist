@@ -39,6 +39,13 @@ function truncate(text: string, max = 48) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+type UserProfile = {
+  id: string;
+  email: string;
+  fullName: string | null;
+  avatarUrl: string | null;
+};
+
 export function StylistSidebar({
   workspaceId,
   workspaceName,
@@ -57,6 +64,8 @@ export function StylistSidebar({
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [userLoaded, setUserLoaded] = useState(false);
 
   const loadWorkspaces = useCallback(async () => {
     const res = await fetch("/api/workspaces");
@@ -67,6 +76,40 @@ export function StylistSidebar({
   useEffect(() => {
     void loadWorkspaces();
   }, [loadWorkspaces, workspaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadUser() {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (!res.ok) return;
+        const data = (await res.json()) as UserProfile;
+        if (!cancelled) {
+          setUser(data);
+        }
+      } finally {
+        if (!cancelled) setUserLoaded(true);
+      }
+    }
+
+    void loadUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userLoaded || !user?.id) return;
+
+    void fetch("/api/workspace/claim", {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => {
+      // Best-effort claim; safe to ignore.
+    });
+  }, [userLoaded, user?.id]);
 
   async function switchWorkspace(id: string) {
     if (id === workspaceId || switchingId) return;
@@ -93,6 +136,9 @@ export function StylistSidebar({
   const wardrobeFull = wardrobeCount >= WARDROBE_UPLOAD_MAX;
   const isEmpty = bodyCount === 0 && wardrobeCount === 0;
 
+  const displayName = user?.fullName?.trim() || "Chrysty";
+  const avatarLetter = displayName.slice(0, 1).toUpperCase();
+
   return (
     <>
       <aside className="relative z-20 flex max-h-[42dvh] w-full shrink-0 flex-col overflow-y-auto border-b border-border/60 bg-background p-6 lg:sticky lg:top-0 lg:h-svh lg:max-h-none lg:overflow-visible lg:w-[320px] lg:border-b-0 lg:border-r lg:p-8">
@@ -103,11 +149,21 @@ export function StylistSidebar({
             className="stylist-mark shrink-0 cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={UI_COPY.settings.openLabel}
           >
-            C
+            {user?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={user.avatarUrl}
+                alt={displayName}
+                className="h-9 w-9 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              avatarLetter
+            )}
           </button>
 
           <div className="min-w-0 flex-1">
-            <h1 className="stylist-heading text-lg font-semibold">Chrysty</h1>
+            <h1 className="stylist-heading text-lg font-semibold">{displayName}</h1>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
