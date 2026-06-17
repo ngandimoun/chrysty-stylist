@@ -33,7 +33,6 @@ import { generateError, generateLog, normalizeGenerationError } from "@/lib/chry
 import { resolveLookWardrobePieces } from "@/lib/wardrobe/resolve-look-pieces";
 import type { OutfitLookPlan } from "@/lib/ai/outfit-plan-schema";
 import { isFalConfigured } from "@/lib/config/fal";
-import { scheduleGenerationRender } from "@/lib/images/schedule-render";
 
 const schema = z.object({
   message: z.string().min(1),
@@ -255,14 +254,6 @@ export async function POST(request: NextRequest) {
         status: generationStatus,
       })
       .eq("id", generation.id);
-
-    if (falRendering) {
-      scheduleGenerationRender({
-        generationId: generation.id,
-        workspaceId: workspace.id,
-        source: "generate",
-      });
-    }
 
     const intro =
       OUTFIT_RESPONSE_TEMPLATE.introByIntent[intent] || plan.assistantMessage;

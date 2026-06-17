@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OutfitGenerationsFeed } from "@/components/masonry/outfit-generations-feed";
@@ -20,7 +20,13 @@ import {
   type OutfitLookUI,
 } from "@/store/ui";
 import { GeneratingLooks } from "@/components/stylist/generating-looks";
-import { pollOutfitGeneration, triggerOutfitRender } from "@/lib/hooks/use-outfit-render-poll";
+import {
+  isRenderPollFailed,
+  pollOutfitGeneration,
+  triggerOutfitRender,
+  type OutfitPollCompleteMeta,
+  type OutfitPollResponse,
+} from "@/lib/hooks/use-outfit-render-poll";
 import { runGenerationPhaseTimers } from "@/lib/hooks/generation-phase-timers";
 
 type Workspace = {
@@ -58,6 +64,7 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
   const [bodyItems, setBodyItems] = useState<UploadAsset[]>([]);
   const [wardrobeItems, setWardrobeItems] = useState<UploadAsset[]>([]);
   const [generations, setGenerations] = useState<OutfitGenerationUI[]>([]);
+  const resumePollRef = useRef<(() => void) | null>(null);
 
   const {
     openBodyCapture,
@@ -140,6 +147,55 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
     setGenerations(nextGenerations);
   }, []);
 
+  const finishRenderingPoll = useCallback(
+    (generationId: string, pollData: OutfitPollResponse, meta: OutfitPollCompleteMeta) => {
+      setGenerations((prev) =>
+        updateGeneration(prev, generationId, {
+          looks: pollData.looks,
+          generationStatus: pollData.generationStatus,
+        })
+      );
+      setGenerationLooks(pollData.looks);
+      const renderFailed = isRenderPollFailed(pollData, meta);
+      setGenerationPhase(null);
+      setGenerating(false, renderFailed ? UI_COPY.generation.renderFailed : null);
+      setActiveGenerationId(null);
+      setActivePrompt("");
+    },
+    [setGenerationLooks, setGenerating, setGenerationPhase, setActiveGenerationId]
+  );
+
+  const beginRenderingPoll = useCallback(
+    (generationId: string, userPrompt?: string) => {
+      resumePollRef.current?.();
+      if (userPrompt) setActivePrompt(userPrompt);
+      setActiveGenerationId(generationId);
+      setGenerationPhase("rendering");
+      setGenerating(true, UI_COPY.generation.phases.rendering);
+
+      void triggerOutfitRender(generationId);
+
+      resumePollRef.current = pollOutfitGeneration({
+        generationId,
+        timeoutMs: 320_000,
+        onUpdate: (pollData) => {
+          setGenerations((prev) =>
+            updateGeneration(prev, generationId, {
+              looks: pollData.looks,
+              generationStatus: pollData.generationStatus,
+            })
+          );
+          setGenerationLooks(pollData.looks);
+        },
+        onComplete: (pollData, meta) => {
+          finishRenderingPoll(generationId, pollData, meta);
+          resumePollRef.current = null;
+        },
+      });
+    },
+    [finishRenderingPoll, setActiveGenerationId, setGenerationLooks, setGenerating, setGenerationPhase]
+  );
+
   useEffect(() => {
     let active = true;
 
@@ -157,12 +213,27 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
       if (!active) return;
       applyUploads(uploads);
       applyGenerations(nextGenerations);
+
+      const stuck = nextGenerations.find((g) => g.generationStatus === "rendering");
+      if (stuck) {
+        beginRenderingPoll(stuck.generationId, stuck.userPrompt);
+      }
     })();
 
     return () => {
       active = false;
+      resumePollRef.current?.();
+      resumePollRef.current = null;
     };
-  }, [workspace.id, loadUploads, loadGenerations, applyUploads, applyGenerations, setGenerationLooks]);
+  }, [
+    workspace.id,
+    loadUploads,
+    loadGenerations,
+    applyUploads,
+    applyGenerations,
+    setGenerationLooks,
+    beginRenderingPoll,
+  ]);
 
   async function completeOnboarding() {
     if (workspace.onboardingComplete) return;
@@ -183,8 +254,6 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
       setGenerationPhase,
       setGenerating,
     });
-
-    let stopPoll: (() => void) | null = null;
 
     try {
       const res = await fetch("/api/outfits/generate", {
@@ -222,46 +291,12 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
 
       if (data.rendering && generationId) {
         clearPhaseTimers();
-        setActiveGenerationId(generationId);
-        setGenerationPhase("rendering");
-        setGenerating(true, UI_COPY.generation.phases.rendering);
-
-        void triggerOutfitRender(generationId);
-
-        stopPoll = pollOutfitGeneration({
-          generationId,
-          onUpdate: (pollData) => {
-            setGenerations((prev) =>
-              updateGeneration(prev, generationId, {
-                looks: pollData.looks,
-                generationStatus: pollData.generationStatus,
-              })
-            );
-            setGenerationLooks(pollData.looks);
-          },
-          onComplete: (pollData) => {
-            setGenerations((prev) =>
-              updateGeneration(prev, generationId, {
-                looks: pollData.looks,
-                generationStatus: pollData.generationStatus,
-              })
-            );
-            setGenerationLooks(pollData.looks);
-            const renderFailed =
-              pollData.generationStatus === "failed" && pollData.renderedCount === 0;
-            setGenerationPhase(null);
-            setGenerating(
-              false,
-              renderFailed ? UI_COPY.generation.renderFailed : null
-            );
-            setActiveGenerationId(null);
-            setActivePrompt("");
-          },
-        });
+        beginRenderingPoll(generationId, trimmed);
         return;
       }
     } catch (e) {
-      stopPoll?.();
+      resumePollRef.current?.();
+      resumePollRef.current = null;
       setGenerating(false, e instanceof Error ? e.message : "Something went wrong");
       setGenerationPhase(null);
       setActiveGenerationId(null);

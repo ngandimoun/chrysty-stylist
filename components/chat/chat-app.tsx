@@ -173,7 +173,7 @@ export function ChatApp({ workspace }: { workspace: Workspace }) {
               )
             );
           },
-          onComplete: (pollData) => {
+          onComplete: (pollData, _meta) => {
             setGenerationLooks(pollData.looks);
             setMessages((prev) =>
               prev.map((m) =>

@@ -5,6 +5,9 @@
     },
     "app/api/outfits/generate/route.ts": {
       "maxDuration": 120
+    },
+    "app/api/outfits/render/[generationId]/route.ts": {
+      "maxDuration": 300
     }
   },
   "build": {
