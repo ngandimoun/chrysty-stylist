@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 import { getModelConfig, requireGeminiApiKey } from "@/lib/config/models";
 
-import { outfitPlanSchema, type OutfitPlan } from "@/lib/ai/outfit-plan-schema";
+import { parseOutfitPlan, type OutfitPlan } from "@/lib/ai/outfit-plan-schema";
 
 import { MAX_PIECES_PER_LOOK } from "@/lib/chrysty/look-count-constants";
 
@@ -308,7 +308,7 @@ export async function planOutfitsWithGemini(params: {
 
   const text = response.text;
 
-  const parsed = outfitPlanSchema.parse(JSON.parse(text ?? "{}"));
+  const parsed = parseOutfitPlan(JSON.parse(text ?? "{}"));
 
 
 

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 const PREFIX = "[generate]";
 
 function isEnabled() {
@@ -23,6 +25,13 @@ export function normalizeGenerationError(error: unknown): {
   message: string;
   cause?: string;
 } {
+  if (error instanceof z.ZodError) {
+    return {
+      message: "Could not read the styling plan — please try again.",
+      cause: error.issues.map((issue) => issue.path.join(".")).join(", "),
+    };
+  }
+
   if (error instanceof Error) {
     const isTimeout =
       error.name === "AbortError" ||

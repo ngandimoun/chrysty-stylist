@@ -42,3 +42,76 @@ export type OutfitLookPlan = z.infer<typeof outfitLookPlanSchema>;
 export type SubjectAssignment = z.infer<typeof subjectAssignmentSchema>;
 export type PerceivedPresentation = z.infer<typeof perceivedPresentationSchema>;
 
+function nonEmptyString(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+function coerceLook(raw: unknown, idx: number) {
+  const look = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const lookNumber = idx + 1;
+
+  const rationale = nonEmptyString(look.rationale, "A balanced look from your wardrobe.");
+  const stylingReasoning = nonEmptyString(
+    look.stylingReasoning,
+    nonEmptyString(look.rationale, "Styled from your confirmed pieces.")
+  );
+  const itemReasoning = nonEmptyString(look.itemReasoning, stylingReasoning);
+
+  const lookIndex =
+    typeof look.lookIndex === "number" && look.lookIndex >= 1
+      ? Math.floor(look.lookIndex)
+      : lookNumber;
+
+  const wardrobeItemIds = Array.isArray(look.wardrobeItemIds)
+    ? look.wardrobeItemIds.filter((id): id is string => typeof id === "string")
+    : [];
+
+  return {
+    ...look,
+    lookIndex,
+    styleDirection: nonEmptyString(look.styleDirection, `Look ${lookNumber}`),
+    stylingReasoning,
+    itemReasoning,
+    wardrobeItemIds,
+    rationale,
+    vibe: nonEmptyString(look.vibe, "Clean and effortless"),
+    occasionTag: nonEmptyString(look.occasionTag, "Today"),
+    ...(typeof look.imagePrompt === "string" ? { imagePrompt: look.imagePrompt } : {}),
+    ...(typeof look.isStylistPick === "boolean" ? { isStylistPick: look.isStylistPick } : {}),
+    ...(Array.isArray(look.subjectAssignments)
+      ? { subjectAssignments: look.subjectAssignments }
+      : {}),
+  };
+}
+
+export function coerceOutfitPlan(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.looks)) return raw;
+
+  const looks = obj.looks.map((look, idx) => coerceLook(look, idx));
+  const hasPick = looks.some((look) => look.isStylistPick === true);
+  if (!hasPick && looks.length > 0) {
+    looks[0] = { ...looks[0], isStylistPick: true };
+  }
+
+  return {
+    ...obj,
+    planningReasoning: nonEmptyString(
+      obj.planningReasoning,
+      "Planned looks from your wardrobe and request."
+    ),
+    assistantMessage: nonEmptyString(
+      obj.assistantMessage,
+      "Here's what I'd put together from your closet."
+    ),
+    looks,
+  };
+}
+
+export function parseOutfitPlan(raw: unknown): OutfitPlan {
+  return outfitPlanSchema.parse(coerceOutfitPlan(raw));
+}

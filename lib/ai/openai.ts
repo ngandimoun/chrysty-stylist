@@ -134,8 +134,9 @@ export async function planOutfits(params: {
     const parsed = outfitPlanSchema.parse(
       JSON.parse(response.choices[0]?.message?.content ?? "{}")
     );
-    parsed.looks = parsed.looks.map((look) => ({
+    parsed.looks = parsed.looks.map((look, idx) => ({
       ...look,
+      lookIndex: idx + 1,
       wardrobeItemIds: Array.from(
         new Set(look.wardrobeItemIds.filter((id) => ids.includes(id)))
       ).slice(0, MAX_PIECES_PER_LOOK),

@@ -1,5 +1,5 @@
 import { isGeminiConfigured, isOpenAIConfigured } from "@/lib/config/models";
-import { outfitPlanSchema, type OutfitPlan } from "@/lib/ai/outfit-plan-schema";
+import { parseOutfitPlan, type OutfitPlan } from "@/lib/ai/outfit-plan-schema";
 import { planOutfits as planOutfitsWithOpenAI } from "@/lib/ai/openai";
 import { outfitPlanningWorkflow } from "@/src/mastra/workflows/outfit-planning";
 import type { WardrobeCatalogItem, BodyRef } from "@/lib/ai/gemini";
@@ -49,7 +49,7 @@ export async function planOutfitsForGeneration(input: {
         }
         throw new Error(`Planning failed (${result.status})`);
       }
-      return outfitPlanSchema.parse(result.result);
+      return parseOutfitPlan(result.result);
     } catch (error) {
       if (isOpenAIConfigured() && isGeminiTransientError(error)) {
         generateLog("planning_provider", {
@@ -66,7 +66,7 @@ export async function planOutfitsForGeneration(input: {
           workspaceStylingContext: input.workspaceStylingContext,
           bodyReferenceSummary: input.bodyReferenceSummary,
         });
-        return outfitPlanSchema.parse(openAiPlan);
+        return parseOutfitPlan(openAiPlan);
       }
       throw error;
     }
@@ -84,7 +84,7 @@ export async function planOutfitsForGeneration(input: {
       workspaceStylingContext: input.workspaceStylingContext,
       bodyReferenceSummary: input.bodyReferenceSummary,
     });
-    return outfitPlanSchema.parse(openAiPlan);
+    return parseOutfitPlan(openAiPlan);
   }
 
   // Last resort: minimal plan from wardrobe ids (keeps app usable).
@@ -102,7 +102,7 @@ export async function planOutfitsForGeneration(input: {
     isStylistPick: i === 0,
   }));
 
-  return outfitPlanSchema.parse({
+  return parseOutfitPlan({
     planningReasoning: "Fallback plan because no model is configured.",
     assistantMessage: "Here's what I'd put together from your closet.",
     looks,
