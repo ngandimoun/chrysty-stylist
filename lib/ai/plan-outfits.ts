@@ -4,6 +4,7 @@ import { planOutfits as planOutfitsWithOpenAI } from "@/lib/ai/openai";
 import { outfitPlanningWorkflow } from "@/src/mastra/workflows/outfit-planning";
 import type { WardrobeCatalogItem, BodyRef } from "@/lib/ai/gemini";
 import { generateLog } from "@/lib/chrysty/generate-debug";
+import { isGeminiTransientError } from "@/lib/ai/gemini-retry";
 
 export async function planOutfitsForGeneration(input: {
   stylingMessage: string;
@@ -19,35 +20,56 @@ export async function planOutfitsForGeneration(input: {
 }): Promise<OutfitPlan> {
   if (isGeminiConfigured()) {
     generateLog("planning_provider", { provider: "gemini", lookCount: input.lookCount });
-    const run = await outfitPlanningWorkflow.createRun();
-    const result = await run.start({
-      inputData: {
-        stylingMessage: input.stylingMessage,
-        lookCount: input.lookCount,
-        workspaceMission: input.workspaceMission ?? null,
-        workspaceStylingContext: input.workspaceStylingContext ?? null,
-        memoryJson: input.memoryJson ?? null,
-        bodyReferenceSummary: input.bodyReferenceSummary ?? null,
-        bodyRefs: input.bodyRefs,
-        wardrobeCatalog: input.wardrobeCatalog,
-      },
-    });
-    if (result.status !== "success") {
-      if (result.status === "failed") {
-        throw result.error instanceof Error
-          ? result.error
-          : new Error(
-              typeof result.error === "object" &&
-                result.error &&
-                "message" in result.error &&
-                typeof (result.error as { message: unknown }).message === "string"
-                ? (result.error as { message: string }).message
-                : "Planning failed"
-            );
+    try {
+      const run = await outfitPlanningWorkflow.createRun();
+      const result = await run.start({
+        inputData: {
+          stylingMessage: input.stylingMessage,
+          lookCount: input.lookCount,
+          workspaceMission: input.workspaceMission ?? null,
+          workspaceStylingContext: input.workspaceStylingContext ?? null,
+          memoryJson: input.memoryJson ?? null,
+          bodyReferenceSummary: input.bodyReferenceSummary ?? null,
+          bodyRefs: input.bodyRefs,
+          wardrobeCatalog: input.wardrobeCatalog,
+        },
+      });
+      if (result.status !== "success") {
+        if (result.status === "failed") {
+          throw result.error instanceof Error
+            ? result.error
+            : new Error(
+                typeof result.error === "object" &&
+                  result.error &&
+                  "message" in result.error &&
+                  typeof (result.error as { message: unknown }).message === "string"
+                  ? (result.error as { message: string }).message
+                  : "Planning failed"
+              );
+        }
+        throw new Error(`Planning failed (${result.status})`);
       }
-      throw new Error(`Planning failed (${result.status})`);
+      return outfitPlanSchema.parse(result.result);
+    } catch (error) {
+      if (isOpenAIConfigured() && isGeminiTransientError(error)) {
+        generateLog("planning_provider", {
+          provider: "openai_fallback",
+          lookCount: input.lookCount,
+        });
+        const openAiPlan = await planOutfitsWithOpenAI({
+          userMessage: input.stylingMessage,
+          lookCount: input.lookCount,
+          wardrobe: input.wardrobe,
+          memoryJson: input.memoryJson,
+          userName: input.userName,
+          workspaceMission: input.workspaceMission,
+          workspaceStylingContext: input.workspaceStylingContext,
+          bodyReferenceSummary: input.bodyReferenceSummary,
+        });
+        return outfitPlanSchema.parse(openAiPlan);
+      }
+      throw error;
     }
-    return outfitPlanSchema.parse(result.result);
   }
 
   if (isOpenAIConfigured()) {

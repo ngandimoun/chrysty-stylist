@@ -11,6 +11,7 @@ import { buildOutfitPlanningRules, buildMultiPersonPlanningRules } from "@/lib/c
 import type { WorkspaceProfile } from "@/lib/workspace/settings";
 
 import { generateLog } from "@/lib/chrysty/generate-debug";
+import { generateContentWithRetry } from "@/lib/ai/gemini-retry";
 
 
 
@@ -228,126 +229,80 @@ export async function planOutfitsWithGemini(params: {
 
 
 
-  const response = await getClient().models.generateContent({
-
-    model,
-
-    contents: [
-
-      {
-
-        role: "user",
-
-        parts: [{ text: prompt }, ...bodyParts, ...wardrobeParts],
-
-      },
-
-    ],
-
-    config: {
-
-      temperature: 0.3,
-
-      responseMimeType: "application/json",
-
-      abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
-
-      responseSchema: {
-
-        type: Type.OBJECT,
-
-        properties: {
-
-          planningReasoning: { type: Type.STRING },
-
-          assistantMessage: { type: Type.STRING },
-
-          looks: {
-
-            type: Type.ARRAY,
-
-            items: {
-
-              type: Type.OBJECT,
-
-              properties: {
-
-                lookIndex: { type: Type.INTEGER },
-
-                styleDirection: { type: Type.STRING },
-
-                stylingReasoning: { type: Type.STRING },
-
-                itemReasoning: { type: Type.STRING },
-
-                wardrobeItemIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-
-                rationale: { type: Type.STRING },
-
-                vibe: { type: Type.STRING },
-
-                occasionTag: { type: Type.STRING },
-
-                imagePrompt: { type: Type.STRING },
-
-                isStylistPick: { type: Type.BOOLEAN },
-
-                subjectAssignments: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      bodyRefIndex: { type: Type.INTEGER },
-                      perceivedPresentation: { type: Type.STRING },
-                      personLabel: { type: Type.STRING },
-                      wardrobeItemIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-                      assignmentReasoning: { type: Type.STRING },
-                    },
-                    required: [
-                      "bodyRefIndex",
-                      "perceivedPresentation",
-                      "personLabel",
-                      "wardrobeItemIds",
-                      "assignmentReasoning",
-                    ],
-                  },
-                },
-
-              },
-
-              required: [
-
-                "lookIndex",
-
-                "styleDirection",
-
-                "stylingReasoning",
-
-                "itemReasoning",
-
-                "wardrobeItemIds",
-
-                "rationale",
-
-                "vibe",
-
-                "occasionTag",
-
-              ],
-
-            },
-
+  const response = await generateContentWithRetry(
+    (activeModel) =>
+      getClient().models.generateContent({
+        model: activeModel,
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }, ...bodyParts, ...wardrobeParts],
           },
-
+        ],
+        config: {
+          temperature: 0.3,
+          responseMimeType: "application/json",
+          abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              planningReasoning: { type: Type.STRING },
+              assistantMessage: { type: Type.STRING },
+              looks: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    lookIndex: { type: Type.INTEGER },
+                    styleDirection: { type: Type.STRING },
+                    stylingReasoning: { type: Type.STRING },
+                    itemReasoning: { type: Type.STRING },
+                    wardrobeItemIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    rationale: { type: Type.STRING },
+                    vibe: { type: Type.STRING },
+                    occasionTag: { type: Type.STRING },
+                    imagePrompt: { type: Type.STRING },
+                    isStylistPick: { type: Type.BOOLEAN },
+                    subjectAssignments: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          bodyRefIndex: { type: Type.INTEGER },
+                          perceivedPresentation: { type: Type.STRING },
+                          personLabel: { type: Type.STRING },
+                          wardrobeItemIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                          assignmentReasoning: { type: Type.STRING },
+                        },
+                        required: [
+                          "bodyRefIndex",
+                          "perceivedPresentation",
+                          "personLabel",
+                          "wardrobeItemIds",
+                          "assignmentReasoning",
+                        ],
+                      },
+                    },
+                  },
+                  required: [
+                    "lookIndex",
+                    "styleDirection",
+                    "stylingReasoning",
+                    "itemReasoning",
+                    "wardrobeItemIds",
+                    "rationale",
+                    "vibe",
+                    "occasionTag",
+                  ],
+                },
+              },
+            },
+            required: ["planningReasoning", "assistantMessage", "looks"],
+          },
         },
-
-        required: ["planningReasoning", "assistantMessage", "looks"],
-
-      },
-
-    },
-
-  });
+      }),
+    model
+  );
 
 
 

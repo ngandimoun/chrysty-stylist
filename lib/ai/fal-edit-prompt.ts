@@ -7,6 +7,7 @@ import {
   type StyledImageLayout,
 } from "@/lib/ai/fal-edit-prompt-schema";
 import { generateLog } from "@/lib/chrysty/generate-debug";
+import { generateContentWithRetry } from "@/lib/ai/gemini-retry";
 import { buildFalRenderPromptSuffix, FAL_FULL_BODY_RULES } from "@/lib/chrysty/fal-render-rules";
 
 const GEMINI_TIMEOUT_MS = 90_000;
@@ -272,14 +273,16 @@ export async function craftFalEditPromptWithGemini(
   });
 
   try {
-    const response = await getClient().models.generateContent({
-      model,
-      contents: [{ role: "user", parts: [{ text: prompt }, ...bodyParts, ...wardrobeParts] }],
-      config: {
-        temperature: 0.2,
-        responseMimeType: "application/json",
-        abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
-        responseSchema: {
+    const response = await generateContentWithRetry(
+      (activeModel) =>
+        getClient().models.generateContent({
+          model: activeModel,
+          contents: [{ role: "user", parts: [{ text: prompt }, ...bodyParts, ...wardrobeParts] }],
+          config: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+            abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+            responseSchema: {
           type: Type.OBJECT,
           properties: {
             editPrompt: { type: Type.STRING },
@@ -365,7 +368,9 @@ export async function craftFalEditPromptWithGemini(
           ],
         },
       },
-    });
+        }),
+      model
+    );
 
     const parsed = falEditPromptSchema.parse(normalizeFalPrompt(JSON.parse(response.text ?? "{}")));
     generateLog("fal_prompt_gemini_done", {
