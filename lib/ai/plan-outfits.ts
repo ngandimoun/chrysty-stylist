@@ -49,7 +49,7 @@ export async function planOutfitsForGeneration(input: {
         }
         throw new Error(`Planning failed (${result.status})`);
       }
-      return parseOutfitPlan(result.result);
+      return parseOutfitPlan(result.result, { bodyRefCount: input.bodyRefs.length });
     } catch (error) {
       if (isOpenAIConfigured() && isGeminiTransientError(error)) {
         generateLog("planning_provider", {
@@ -66,7 +66,7 @@ export async function planOutfitsForGeneration(input: {
           workspaceStylingContext: input.workspaceStylingContext,
           bodyReferenceSummary: input.bodyReferenceSummary,
         });
-        return parseOutfitPlan(openAiPlan);
+        return parseOutfitPlan(openAiPlan, { bodyRefCount: input.bodyRefs.length });
       }
       throw error;
     }
@@ -84,7 +84,7 @@ export async function planOutfitsForGeneration(input: {
       workspaceStylingContext: input.workspaceStylingContext,
       bodyReferenceSummary: input.bodyReferenceSummary,
     });
-    return parseOutfitPlan(openAiPlan);
+    return parseOutfitPlan(openAiPlan, { bodyRefCount: input.bodyRefs.length });
   }
 
   // Last resort: minimal plan from wardrobe ids (keeps app usable).
@@ -102,10 +102,13 @@ export async function planOutfitsForGeneration(input: {
     isStylistPick: i === 0,
   }));
 
-  return parseOutfitPlan({
-    planningReasoning: "Fallback plan because no model is configured.",
-    assistantMessage: "Here's what I'd put together from your closet.",
-    looks,
-  });
+  return parseOutfitPlan(
+    {
+      planningReasoning: "Fallback plan because no model is configured.",
+      assistantMessage: "Here's what I'd put together from your closet.",
+      looks,
+    },
+    { bodyRefCount: input.bodyRefs.length }
+  );
 }
 

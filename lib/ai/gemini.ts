@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 import { getModelConfig, requireGeminiApiKey } from "@/lib/config/models";
 
-import { parseOutfitPlan, type OutfitPlan } from "@/lib/ai/outfit-plan-schema";
+import { parseOutfitPlan, PERCEIVED_PRESENTATION_OPTIONS, type OutfitPlan } from "@/lib/ai/outfit-plan-schema";
 
 import { MAX_PIECES_PER_LOOK } from "@/lib/chrysty/look-count-constants";
 
@@ -269,7 +269,10 @@ export async function planOutfitsWithGemini(params: {
                         type: Type.OBJECT,
                         properties: {
                           bodyRefIndex: { type: Type.INTEGER },
-                          perceivedPresentation: { type: Type.STRING },
+                          perceivedPresentation: {
+                            type: Type.STRING,
+                            enum: [...PERCEIVED_PRESENTATION_OPTIONS],
+                          },
                           personLabel: { type: Type.STRING },
                           wardrobeItemIds: { type: Type.ARRAY, items: { type: Type.STRING } },
                           assignmentReasoning: { type: Type.STRING },
@@ -308,7 +311,9 @@ export async function planOutfitsWithGemini(params: {
 
   const text = response.text;
 
-  const parsed = parseOutfitPlan(JSON.parse(text ?? "{}"));
+  const parsed = parseOutfitPlan(JSON.parse(text ?? "{}"), {
+    bodyRefCount: params.bodyRefs.length,
+  });
 
 
 

@@ -8,18 +8,22 @@ import {
 } from "@/lib/ai/fal-edit-prompt-schema";
 import { generateLog } from "@/lib/chrysty/generate-debug";
 import { generateContentWithRetry } from "@/lib/ai/gemini-retry";
+import { coercePerceivedPresentation, PERCEIVED_PRESENTATION_OPTIONS } from "@/lib/ai/outfit-plan-schema";
 import { buildFalRenderPromptSuffix, FAL_FULL_BODY_RULES } from "@/lib/chrysty/fal-render-rules";
 
 const GEMINI_TIMEOUT_MS = 90_000;
 
 const VALID_CROP_ZONES = new Set(["upper_torso", "mid_outfit", "lower_legs", "feet"]);
+const VALID_SCENE_TYPES = new Set(["solo", "couple", "family", "group"]);
+const VALID_IMAGE_ROLES = new Set(["user_look", "wardrobe_reference"]);
+const VALID_LAYOUT_MODES = new Set(["hero_only", "detail_insets"]);
 
 function normalizeFalPrompt(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const record = { ...(raw as Record<string, unknown>) };
 
   const sceneType = record.sceneType;
-  if (typeof sceneType === "string" && !["solo", "couple", "family", "group"].includes(sceneType)) {
+  if (typeof sceneType !== "string" || !VALID_SCENE_TYPES.has(sceneType)) {
     record.sceneType = "solo";
   }
 
@@ -29,13 +33,44 @@ function normalizeFalPrompt(raw: unknown): unknown {
       const mapEntry = { ...(entry as Record<string, unknown>) };
       if (mapEntry.role === "body") mapEntry.role = "user_look";
       if (mapEntry.role === "wardrobe") mapEntry.role = "wardrobe_reference";
+      if (typeof mapEntry.role !== "string" || !VALID_IMAGE_ROLES.has(mapEntry.role)) {
+        mapEntry.role = "user_look";
+      }
       return mapEntry;
     });
   }
 
+  if (Array.isArray(record.subjectStyling)) {
+    record.subjectStyling = record.subjectStyling
+      .filter((entry) => entry && typeof entry === "object")
+      .map((entry) => {
+        const subject = { ...(entry as Record<string, unknown>) };
+        subject.perceivedPresentation = coercePerceivedPresentation(subject.perceivedPresentation);
+        if (typeof subject.bodyRefIndex === "number" && Number.isFinite(subject.bodyRefIndex)) {
+          subject.bodyRefIndex = Math.max(0, Math.min(4, Math.floor(subject.bodyRefIndex)));
+        } else {
+          subject.bodyRefIndex = 0;
+        }
+        if (typeof subject.personLabel !== "string" || !subject.personLabel.trim()) {
+          subject.personLabel = "the person";
+        }
+        if (typeof subject.layeringNotes !== "string" || !subject.layeringNotes.trim()) {
+          subject.layeringNotes = "Apply wardrobe items in logical layering order.";
+        }
+        if (!Array.isArray(subject.wardrobeItemIds)) {
+          subject.wardrobeItemIds = [];
+        } else {
+          subject.wardrobeItemIds = subject.wardrobeItemIds.filter(
+            (id): id is string => typeof id === "string"
+          );
+        }
+        return subject;
+      });
+  }
+
   if (record.styledImageLayout && typeof record.styledImageLayout === "object") {
     const layout = { ...(record.styledImageLayout as Record<string, unknown>) };
-    if (layout.mode !== "hero_only" && layout.mode !== "detail_insets") {
+    if (typeof layout.mode !== "string" || !VALID_LAYOUT_MODES.has(layout.mode)) {
       layout.mode = "hero_only";
     }
     if (Array.isArray(layout.insets)) {
@@ -293,7 +328,7 @@ export async function craftFalEditPromptWithGemini(
                 type: Type.OBJECT,
                 properties: {
                   index: { type: Type.INTEGER },
-                  role: { type: Type.STRING },
+                  role: { type: Type.STRING, enum: ["user_look", "wardrobe_reference"] },
                   bodyRefId: { type: Type.STRING },
                   wardrobeItemId: { type: Type.STRING },
                   label: { type: Type.STRING },
@@ -308,7 +343,10 @@ export async function craftFalEditPromptWithGemini(
                 properties: {
                   bodyRefIndex: { type: Type.INTEGER },
                   personLabel: { type: Type.STRING },
-                  perceivedPresentation: { type: Type.STRING },
+                  perceivedPresentation: {
+                    type: Type.STRING,
+                    enum: [...PERCEIVED_PRESENTATION_OPTIONS],
+                  },
                   wardrobeItemIds: { type: Type.ARRAY, items: { type: Type.STRING } },
                   layeringNotes: { type: Type.STRING },
                 },
@@ -335,17 +373,20 @@ export async function craftFalEditPromptWithGemini(
               },
             },
             preserveInstructions: { type: Type.STRING },
-            sceneType: { type: Type.STRING },
+            sceneType: { type: Type.STRING, enum: ["solo", "couple", "family", "group"] },
             styledImageLayout: {
               type: Type.OBJECT,
               properties: {
-                mode: { type: Type.STRING },
+                mode: { type: Type.STRING, enum: ["hero_only", "detail_insets"] },
                 insets: {
                   type: Type.ARRAY,
                   items: {
                     type: Type.OBJECT,
                     properties: {
-                      cropZone: { type: Type.STRING },
+                      cropZone: {
+                        type: Type.STRING,
+                        enum: ["upper_torso", "mid_outfit", "lower_legs", "feet"],
+                      },
                       focusLabel: { type: Type.STRING },
                       reasoning: { type: Type.STRING },
                     },

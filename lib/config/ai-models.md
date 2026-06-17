@@ -6,6 +6,10 @@
  * OPENAI_MEMORY_MODEL      — async memory merge (optional, defaults to chat)
  * OPENAI_OUTFIT_PLAN_MODEL — JSON outfit item selection (optional, defaults to chat)
  * GEMINI_OUTFIT_PLAN_MODEL — Gemini model for outfit planning (default: gemini-3.5-flash)
+ * GEMINI_FALLBACK_MODELS     — comma-separated 503/429 fallbacks (optional; defaults to 3.x chain)
+ *
+ * Default fallback chain on transient errors:
+ *   gemini-3.1-flash-lite, gemini-3.1-pro-preview, gemini-flash-lite-latest, gemini-pro-latest
  */
 
 export { getModelConfig, isOpenAIConfigured, isGeminiConfigured, requireOpenAI } from "./models";

@@ -1,6 +1,11 @@
 import { generateLog } from "@/lib/chrysty/generate-debug";
 
-const DEFAULT_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
+const DEFAULT_FALLBACK_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-3.1-pro-preview",
+  "gemini-flash-lite-latest",
+  "gemini-pro-latest",
+];
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
