@@ -11,7 +11,8 @@ export default function Error({
       <h1 className="text-lg font-medium text-foreground">Something went wrong</h1>
       <p className="max-w-sm text-sm text-muted-foreground">
         We hit an unexpected error loading the stylist. Try again, or sign in on chrysty.dev
-        if the problem persists.
+        if the problem persists. If your browser translated this page, turn off translation
+        and reload.
       </p>
       <button
         type="button"
