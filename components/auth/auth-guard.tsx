@@ -4,6 +4,31 @@ import { useEffect, useRef, useState } from "react";
 import { getLoginRedirectUrl } from "@/lib/chrysty/constants";
 import { useSessionBootstrap } from "@/components/auth/session-bootstrap";
 
+const SESSION_RETRIES = 3;
+const SESSION_RETRY_DELAY_MS = 500;
+
+async function verifySession(): Promise<boolean> {
+  for (let attempt = 0; attempt < SESSION_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, SESSION_RETRY_DELAY_MS * attempt)
+      );
+    }
+
+    const response = await fetch("/api/auth/session", { credentials: "include" });
+    if (!response.ok) {
+      continue;
+    }
+
+    const { valid } = (await response.json()) as { valid: boolean };
+    if (valid) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -18,14 +43,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       setFailed(true);
     }, 12_000);
 
-    fetch("/api/auth/session", { credentials: "include" })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Session check failed (${response.status})`);
-        }
-        return response.json() as Promise<{ valid: boolean }>;
-      })
-      .then(({ valid }) => {
+    verifySession()
+      .then((valid) => {
         window.clearTimeout(timeout);
         if (!valid) {
           window.location.replace(getLoginRedirectUrl(window.location.href));

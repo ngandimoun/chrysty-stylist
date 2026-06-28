@@ -15,10 +15,17 @@ export async function getServerUserId(): Promise<string | null> {
         return cookieStore.getAll();
       },
       setAll() {
-        // Route handlers and RSC only read the session here.
+        // RSC reads only; middleware refreshes auth cookies on the response.
       },
     },
   });
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) return null;
 
   const {
     data: { session },
@@ -29,9 +36,9 @@ export async function getServerUserId(): Promise<string | null> {
   configurePlatformForToken(session.access_token);
 
   try {
-    const user = await auth.getUser();
-    return user.id;
+    const platformUser = await auth.getUser();
+    return platformUser.id;
   } catch {
-    return null;
+    return user.id;
   }
 }

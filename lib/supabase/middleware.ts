@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { withSharedCookieDomain } from "@/lib/supabase/cookie-options";
 
 type CookieToSet = {
   name: string;
@@ -32,7 +33,7 @@ export async function updateSession(request: NextRequest) {
             request,
           });
           cookiesToSet.forEach(({ name, value, options }) => {
-            supabaseResponse.cookies.set(name, value, options);
+            supabaseResponse.cookies.set(name, value, withSharedCookieDomain(options));
           });
         },
       },

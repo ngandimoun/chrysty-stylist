@@ -3,20 +3,23 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { WelcomePage } from "@/components/welcome/welcome-page";
 import { SetupRequired } from "@/components/setup/setup-required";
 import { getWorkspaceFromCookie } from "@/lib/workspace/session";
-import { ensureUserWorkspaceCookie } from "@/lib/workspace/user-sync";
 import { isSupabaseConfigured } from "@/lib/supabase/admin";
+import { getServerUserId } from "@/lib/supabase/server";
 
 export default async function WelcomeRoute() {
   if (!isSupabaseConfigured()) {
     return <SetupRequired />;
   }
 
-  let workspace = await getWorkspaceFromCookie();
+  const workspace = await getWorkspaceFromCookie();
   if (!workspace) {
-    await ensureUserWorkspaceCookie();
-    workspace = await getWorkspaceFromCookie();
+    const userId = await getServerUserId();
+    if (userId) {
+      redirect("/api/workspace/sync?returnTo=/welcome");
+    }
+  } else {
+    redirect("/");
   }
-  if (workspace) redirect("/");
 
   return (
     <AuthGuard>

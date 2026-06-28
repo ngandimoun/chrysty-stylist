@@ -46,6 +46,25 @@ type UserProfile = {
   avatarUrl: string | null;
 };
 
+const USER_RETRIES = 3;
+const USER_RETRY_DELAY_MS = 500;
+
+async function fetchUserProfile(): Promise<UserProfile | null> {
+  for (let attempt = 0; attempt < USER_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, USER_RETRY_DELAY_MS * attempt)
+      );
+    }
+
+    const res = await fetch("/api/auth/me", { credentials: "include" });
+    if (!res.ok) continue;
+    return (await res.json()) as UserProfile;
+  }
+
+  return null;
+}
+
 export function StylistSidebar({
   workspaceId,
   workspaceName,
@@ -82,10 +101,8 @@ export function StylistSidebar({
 
     async function loadUser() {
       try {
-        const res = await fetch("/api/auth/me", { credentials: "include" });
-        if (!res.ok) return;
-        const data = (await res.json()) as UserProfile;
-        if (!cancelled) {
+        const data = await fetchUserProfile();
+        if (!cancelled && data) {
           setUser(data);
         }
       } finally {
