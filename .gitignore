@@ -3,6 +3,7 @@
 # dependencies
 /node_modules
 /packages/platform/node_modules
+/packages/live-embed/node_modules
 /.pnp
 .pnp.*
 .yarn/*

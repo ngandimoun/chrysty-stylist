@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Fraunces } from "next/font/google";
+import { ChrystyLiveEmbedProvider } from "@chrysty/live-embed";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import "./globals.css";
 
@@ -42,7 +43,17 @@ export default function RootLayout({
       <body
         className={`notranslate ${dmSans.variable} ${fraunces.variable} font-sans antialiased`}
       >
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <ChrystyLiveEmbedProvider
+            worker="stylist"
+            astraEmbedUrl={
+              process.env.NEXT_PUBLIC_ASTRA_EMBED_URL ??
+              "https://chrysty.chrysty.dev"
+            }
+          >
+            {children}
+          </ChrystyLiveEmbedProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AskChrystyButton, ChrystyHostContext } from "@chrysty/live-embed";
 import { PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OutfitGenerationsFeed } from "@/components/masonry/outfit-generations-feed";
@@ -331,110 +332,123 @@ export function StylistApp({ workspace }: { workspace: Workspace }) {
   }
 
   return (
-    <div className="gallery-shell flex h-full min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
-      {sidebarOpen && (
-        <StylistSidebar
-          workspaceId={workspace.id}
-          workspaceName={workspace.name}
-          workspaceMission={workspace.mission}
+    <ChrystyHostContext
+      source="stylist_workspace"
+      title={workspace.name || "Stylist"}
+      captureTarget="#workspace-content"
+      worker="stylist"
+      entityId={workspace.id}
+    >
+      <div className="gallery-shell flex h-full min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {sidebarOpen && (
+          <StylistSidebar
+            workspaceId={workspace.id}
+            workspaceName={workspace.name}
+            workspaceMission={workspace.mission}
+            bodyCount={bodyCount}
+            wardrobeCount={wardrobeCount}
+            bodyItems={bodyItems}
+            wardrobeItems={wardrobeItems}
+            onBodyUpload={openBodyCapture}
+            onWardrobeUpload={openWardrobeCapture}
+            onClose={() => setSidebarOpen(false)}
+          />
+        )}
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <main
+            id="workspace-content"
+            data-chrysty-capture
+            className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))] lg:px-8 lg:pt-6 lg:pb-[max(2.5rem,env(safe-area-inset-bottom))]"
+          >
+            {!sidebarOpen && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="absolute left-4 top-4 z-50 h-9 w-9 rounded-full lg:left-8 lg:top-6"
+                aria-label={UI_COPY.sidebar.openLabel}
+                onClick={() => setSidebarOpen(true)}
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </Button>
+            )}
+            <FloatingPrompt
+              value={prompt}
+              lookCount={lookCount}
+              disabled={!canGenerate}
+              loading={isGenerating}
+              onChange={setPrompt}
+              onLookCountChange={setLookCount}
+              onSubmit={() => void generateLooks(prompt.trim())}
+            />
+
+            {statusMessage && (
+              <p className="mb-4 text-center text-sm text-muted-foreground">{statusMessage}</p>
+            )}
+
+            {isGenerating && (
+              <section className="mb-8">
+                <p className="mb-3 text-sm font-medium text-foreground">
+                  {activeGeneration?.userPrompt ?? activePrompt}
+                </p>
+                <GeneratingLooks
+                  wardrobeItems={wardrobeItems}
+                  bodyItems={bodyItems}
+                  looks={
+                    activeGeneration?.looks?.length
+                      ? activeGeneration.looks
+                      : generationLooks.length
+                        ? generationLooks
+                        : []
+                  }
+                />
+              </section>
+            )}
+
+            {completedGenerations.length > 0 && (
+              <OutfitGenerationsFeed
+                generations={completedGenerations}
+                onSelectLook={handleSelectLook}
+              />
+            )}
+
+            {showEmpty && <EmptyLooks hasWardrobeItems={wardrobeCount >= 1} />}
+
+            <footer className="mt-8 mb-16 border-t border-border/70 bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className="mx-auto flex max-w-6xl items-center justify-center">
+                <a
+                  href="https://www.chrysty.dev/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-card px-4 py-1.5 shadow-sm transition-colors hover:border-primary/40 hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  aria-label="Made in Chrysty — visit chrysty.dev"
+                >
+                  <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                    Made in
+                  </span>
+                  <span className="text-sm font-semibold text-primary">Chrysty</span>
+                </a>
+              </div>
+            </footer>
+          </main>
+        </div>
+
+        <CaptureSheet
           bodyCount={bodyCount}
           wardrobeCount={wardrobeCount}
           bodyItems={bodyItems}
           wardrobeItems={wardrobeItems}
-          onBodyUpload={openBodyCapture}
-          onWardrobeUpload={openWardrobeCapture}
-          onClose={() => setSidebarOpen(false)}
+          onUploadConfirmed={() => {
+            void refreshUploads();
+          }}
+          onDelete={deleteUpload}
         />
-      )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <main className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))] lg:px-8 lg:pt-6 lg:pb-[max(2.5rem,env(safe-area-inset-bottom))]">
-          {!sidebarOpen && (
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="absolute left-4 top-4 z-50 h-9 w-9 rounded-full lg:left-8 lg:top-6"
-              aria-label={UI_COPY.sidebar.openLabel}
-              onClick={() => setSidebarOpen(true)}
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </Button>
-          )}
-          <FloatingPrompt
-            value={prompt}
-            lookCount={lookCount}
-            disabled={!canGenerate}
-            loading={isGenerating}
-            onChange={setPrompt}
-            onLookCountChange={setLookCount}
-            onSubmit={() => void generateLooks(prompt.trim())}
-          />
-
-          {statusMessage && (
-            <p className="mb-4 text-center text-sm text-muted-foreground">{statusMessage}</p>
-          )}
-
-          {isGenerating && (
-            <section className="mb-8">
-              <p className="mb-3 text-sm font-medium text-foreground">
-                {activeGeneration?.userPrompt ?? activePrompt}
-              </p>
-              <GeneratingLooks
-                wardrobeItems={wardrobeItems}
-                bodyItems={bodyItems}
-                looks={
-                  activeGeneration?.looks?.length
-                    ? activeGeneration.looks
-                    : generationLooks.length
-                      ? generationLooks
-                      : []
-                }
-              />
-            </section>
-          )}
-
-          {completedGenerations.length > 0 && (
-            <OutfitGenerationsFeed
-              generations={completedGenerations}
-              onSelectLook={handleSelectLook}
-            />
-          )}
-
-          {showEmpty && <EmptyLooks hasWardrobeItems={wardrobeCount >= 1} />}
-
-          <footer className="mt-8 mb-16 border-t border-border/70 bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            <div className="mx-auto flex max-w-6xl items-center justify-center">
-              <a
-                href="https://www.chrysty.dev/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-card px-4 py-1.5 shadow-sm transition-colors hover:border-primary/40 hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                aria-label="Made in Chrysty — visit chrysty.dev"
-              >
-                <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                  Made in
-                </span>
-                <span className="text-sm font-semibold text-primary">Chrysty</span>
-              </a>
-            </div>
-          </footer>
-        </main>
+        <SettingsSheet />
+        <OutfitDetailSheet />
       </div>
-
-      <CaptureSheet
-        bodyCount={bodyCount}
-        wardrobeCount={wardrobeCount}
-        bodyItems={bodyItems}
-        wardrobeItems={wardrobeItems}
-        onUploadConfirmed={() => {
-          void refreshUploads();
-        }}
-        onDelete={deleteUpload}
-      />
-
-      <SettingsSheet />
-      <OutfitDetailSheet />
-    </div>
+      <AskChrystyButton />
+    </ChrystyHostContext>
   );
 }
